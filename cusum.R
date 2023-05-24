@@ -159,10 +159,11 @@ concatVectors <- function(startDate, endDate, sector.dfs, cidr=F) {
 PS <- function(t, A, f_t) {
   # A is a list of ints representing a subset of sectors (indexed from 1-9)
   # t is the stopping point of the sum
-  partialSum <- rep(0, 9)
+  partialSum <- vector('list', length=9)
   for (s in A) {
     for (i in 1:t) {
-      partialSum[s] <- partialSum[s] + sum(f_t[[i]][[s]])
+      if (i == 1) partialSum[[s]] <- f_t[[i]][[s]]
+      else partialSum[[s]] <- partialSum[[s]] + f_t[[i]][[s]]
     }
   }
   return(partialSum)
@@ -170,21 +171,28 @@ PS <- function(t, A, f_t) {
 
 # function for cusum
 cusum <- function(A, f_t) {
-  cu <- 1/(50*length(A)*length(f_t)**2) * sum(sapply(1:length(f_t), function(x) {
-      result <- 0
-      for (vn in (PS(x, A, f_t) - x/length(f_t) * PS(length(f_t), A, f_t))) result <- result + vn**2
+  cu <- 1/(50*length(A)*length(f_t)**2) * rowSums(sapply(1:length(f_t), function(x) {
+      insideSum <- vector('list', length=9)
+      result <- rep(0, 9)
+      # compute the vector PS(t,A) - (t/T)*PS(T,A)
+      for (i in A) {
+        insideSum[i] <- PS(x, A, f_t)[[i]] - x/length(f_t) * PS(length(f_t), A, f_t)[[i]]
+      }
+      # compute vector norm
+      for (i in A) {
+        for (num in insideSum[[i]]) result[i] <- result[i] + num**2
+      }
       return(result)
     }))
   return(cu)
 }
-
 
 ## Test functions
 sector.df.list <- getSectorDfList()
 
 # get random 30 day date range
 startDate <- sample(sector.df.list[[1]]$Date, 1)
-endDate <- startDate + 30
+endDate <- startDate + 120
 # concatenate vectors and compute cusum
 f_t <- concatVectors(startDate, endDate, sector.df.list)
 cusum(c(1:9), f_t)
