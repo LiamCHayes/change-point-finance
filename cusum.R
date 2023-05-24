@@ -6,8 +6,9 @@
 # Load packages
 library(tidyverse)
 library(ggplot2)
+library(rstudioapi)
 # Get data
-setwd('C:/Users/lchco/OneDrive/Documents/School/CSU/Summer_2023/change-point-finance')
+setwd(dirname(getActiveDocumentContext()$path))
 load("9ETFs.RData")
 sectors <- c('xlb' = 'materials', 'xle' = 'energy', 'xlf' = 'financials',
              'xli' = 'industrials', 'xlk' = 'technology', 'xlp' = 'consumer staples',
