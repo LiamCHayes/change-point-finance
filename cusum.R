@@ -22,6 +22,15 @@ getReturns <- function(df) {
   df$computedRet <- returns
   return(df)
 }
+getSectorDfList <- function() {
+  sector.df <- list(xlb.r, xle.r, xlf.r, xli.r, xlk.r, xlp.r, xlu.r, xlv.r, xly.r)
+  sector.df <- lapply(sector.df, getReturns)
+  sector.df <- 
+    lapply(sector.df, function(x) {
+      mutate(x, Date = as.Date(Date, "%m/%d/%Y")) 
+    })
+  return(sector.df)
+}
 
 
 ################################################################################
@@ -107,17 +116,6 @@ plot(densityTest, main=dateString)
 
 ## Test for no change in a set of sectors
 
-# function to return a list of all sector data frames with returns and formatted dates
-getSectorDfList <- function() {
-  sector.df <- list(xlb.r, xle.r, xlf.r, xli.r, xlk.r, xlp.r, xlu.r, xlv.r, xly.r)
-  sector.df <- lapply(sector.df, getReturns)
-  sector.df <- 
-    lapply(sector.df, function(x) {
-      mutate(x, Date = as.Date(Date, "%m/%d/%Y")) 
-    })
-  return(sector.df)
-}
-
 # function to return vectorized kdes updated
 kdeVector <- function(dateString, sectorDF, CIDR=T) {
   df <- sectorDF %>% 
@@ -183,7 +181,12 @@ cusum <- function(A, f_t) {
 
 ## Test functions
 sector.df.list <- getSectorDfList()
-f_t <- concatVectors("07/21/2009", "09/10/2009", sector.df.list)
+
+# get random 30 day date range
+startDate <- sample(sector.df.list[[1]]$Date, 1)
+endDate <- startDate + 30
+# concatenate vectors and compute cusum
+f_t <- concatVectors(startDate, endDate, sector.df.list)
 cusum(c(1:9), f_t)
 
 
