@@ -145,12 +145,16 @@ kdeVector <- function(dateString, sectorDF, CIDR=T) {
 }
 
 # Vector concatenation
-f_t <- rep(0, length(tradingDays))
+f_t <- rep(list(c(0,0,0,0,0,0,0,0,0)), length(tradingDays))
 for (i in 1:length(tradingDays)) {
-  f_t[i] <- lapply(sector.df, kdeVector, dateString=tradingDays[i], CIDR=F)
+  t <- lapply(sector.df, kdeVector, dateString=tradingDays[i], CIDR=F)
+  for (j in 1:9) f_t[[i]][j] <- t[j]
 }
 
-
+# partial sum process
+patrtialSum <- function(t, A) {
+  # use cumsum, A is a subset of sectors, t is the stopping point of the sum
+}
 
 
 
