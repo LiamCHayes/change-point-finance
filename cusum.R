@@ -114,7 +114,7 @@ plot(densityTest, main=dateString)
 ################################################################################
 
 
-## Test for no change in a set of sectors
+## Compute CUSUM functions
 
 # function to return vectorized kdes updated
 kdeVector <- function(dateString, sectorDF, CIDR=T) {
@@ -169,7 +169,7 @@ PS <- function(t, A, f_t) {
   return(partialSum)
 }
 
-# function for cusum
+# function for CUSUM
 cusum <- function(A, f_t) {
   cu <- 1/(50*length(A)*length(f_t)**2) * rowSums(sapply(1:length(f_t), function(x) {
       insideSum <- vector('list', length=9)
@@ -187,13 +187,16 @@ cusum <- function(A, f_t) {
   return(cu)
 }
 
-## Test functions
-sector.df.list <- getSectorDfList()
 
-# get random 30 day date range
+## Compute CUSUM
+
+# put data into correct format for functions
+sector.df.list <- getSectorDfList()
+# get random n day date range
+numDays <- 30
 startDate <- sample(sector.df.list[[1]]$Date, 1)
-endDate <- startDate + 120
-# concatenate vectors and compute cusum
+endDate <- startDate + numDays
+# concatenate vectors and compute CUSUM
 f_t <- concatVectors(startDate, endDate, sector.df.list)
 cusum(c(1:9), f_t)
 
