@@ -101,26 +101,21 @@ densityTest <- kdeVector(dateString, sector, CIDR=F)
 plot(densityTest, main=dateString)
 
 
-###############################################################################
+################################################################################
 
 
 ## Test for no change in a set of sectors
 
-# Pick a time frame to test for a change (06/20/2011 - 10/24/2011) 
-sector.df <- list(xlb.r, xle.r, xlf.r, xli.r, xlk.r, xlp.r, xlu.r, xlv.r, xly.r)
-sector.df <- lapply(sector.df, getReturns)
-sector.df <- 
-  lapply(sector.df, function(x) {
-    mutate(x, Date = as.Date(Date, "%m/%d/%Y")) 
-  })
-sector.df.timeFrame <- 
-  lapply(sector.df, function(x) {
-    filter(x, Date > as.Date("06/20/2011", "%m/%d/%Y"),
-             Date < as.Date("10/24/2011", "%m/%d/%Y")
-           )
+# function to return a list of all sector data frames with returns and formatted dates
+getSectorDfList <- function() {
+  sector.df <- list(xlb.r, xle.r, xlf.r, xli.r, xlk.r, xlp.r, xlu.r, xlv.r, xly.r)
+  sector.df <- lapply(sector.df, getReturns)
+  sector.df <- 
+    lapply(sector.df, function(x) {
+      mutate(x, Date = as.Date(Date, "%m/%d/%Y")) 
     })
-
-tradingDays <- unique(sector.df.timeFrame[[1]]$Date)
+  return(sector.df)
+}
 
 # function to return vectorized kdes updated
 kdeVector <- function(dateString, sectorDF, CIDR=T) {
@@ -144,17 +139,51 @@ kdeVector <- function(dateString, sectorDF, CIDR=T) {
   return(vectorKDE)
 }
 
-# Vector concatenation
-f_t <- rep(list(c(0,0,0,0,0,0,0,0,0)), length(tradingDays))
-for (i in 1:length(tradingDays)) {
-  t <- lapply(sector.df, kdeVector, dateString=tradingDays[i], CIDR=F)
-  for (j in 1:9) f_t[[i]][j] <- t[j]
+# function for vector concatenation
+concatVectors <- function(startDate, endDate, sector.dfs, cidr=F) {
+  sector.df.timeFrame <- 
+    lapply(sector.dfs, function(x) {
+      filter(x, Date > as.Date(startDate, "%m/%d/%Y"),
+             Date < as.Date(endDate, "%m/%d/%Y")
+      )
+    })
+  tradingDays <- unique(sector.df.timeFrame[[1]]$Date)
+  f_t <- rep(list(c(0,0,0,0,0,0,0,0,0)), length(tradingDays))
+  for (i in 1:length(tradingDays)) {
+    t <- lapply(sector.df.timeFrame, kdeVector, dateString=tradingDays[i], CIDR=cidr)
+    for (j in 1:9) f_t[[i]][j] <- t[j]
+  }
+  return(f_t)
 }
 
-# partial sum process
-patrtialSum <- function(t, A) {
-  # use cumsum, A is a subset of sectors, t is the stopping point of the sum
+# function for partial sum process
+PS <- function(t, A, f_t) {
+  # A is a list of ints representing a subset of sectors (indexed from 1-9)
+  # t is the stopping point of the sum
+  partialSum <- rep(0, 9)
+  for (s in A) {
+    for (i in 1:t) {
+      partialSum[s] <- partialSum[s] + sum(f_t[[i]][[s]])
+    }
+  }
+  return(partialSum)
 }
+
+# function for cusum
+cusum <- function(A, f_t) {
+  cu <- 1/(50*length(A)*length(f_t)**2) * sum(sapply(1:length(f_t), function(x) {
+      result <- 0
+      for (vn in (PS(x, A, f_t) - x/length(f_t) * PS(length(f_t), A, f_t))) result <- result + vn**2
+      return(result)
+    }))
+  return(cu)
+}
+
+
+## Test functions
+sector.df.list <- getSectorDfList()
+f_t <- concatVectors("07/21/2009", "09/10/2009", sector.df.list)
+cusum(c(1:9), f_t)
 
 
 
