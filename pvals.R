@@ -151,5 +151,30 @@ getCovMatrices <- function(f_t) {
 }
 
 
+################################################################################
+
+
+
+## Eigenvalues
+################################################################################
+
+
+# function to calculate first B eigenvalues
+getEigenvalues <- function(covMatrices, B=10) {
+  eigenValues <- lapply(covMatrices, function(x) {
+    eigen(x, symmetric=T, only.values=T)
+  })
+  
+  eigenValues <- lapply(eigenValues, function(x) {
+    return(x$values[1:B])
+  })
+  return(eigenValues)
+}
+
+
 
 ################################################################################
+
+
+
+## Simulate p-values
