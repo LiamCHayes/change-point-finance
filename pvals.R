@@ -178,3 +178,54 @@ getEigenvalues <- function(covMatrices, B=10) {
 
 
 ## Simulate p-values
+################################################################################
+
+
+brownian_bridge <- function() {
+  # Generate a Brownian bridge evaluated on the grid 1:1000/1000
+  t <- seq(0, 1, length.out = 1001)  # Grid from 1 to 1000 divided by 1000
+  dt <- diff(t)  # Calculate the differences between adjacent points
+  # Generate standard Brownian motion
+  dW <- sqrt(dt) * rnorm(length(dt))
+  W <- c(0, cumsum(dW))
+  # Generate Brownian bridge as linear combination of Brownian motion with
+  # itself
+  B <- W - t * W[length(W)]
+  return(B)
+}
+
+integrated_brownian_bridge <- function(K) {
+  # Generate a square integrated Brownian bridge
+  results = 1:K*0
+  # result vector
+  for(i in 1:K){
+    results[i] = sum(brownian_bridge()^2)/length(brownian_bridge())
+    # Create independent BB in each run; squared sum over gridpoints
+    # provides a Riemann-approximation of the integral
+  }
+  return(results)
+}
+
+B <- 10
+covMatrices <- getCovMatrices(f_t)
+eigenVals <- getEigenvalues(covMatrices, B)
+brwnBridges <- vector('list', length=B)
+for (i in 1:length(brwnBridges)) {
+  brwnBridges[[i]] <- integrated_brownian_bridge(1000)
+}
+v_ell <- rep(0, 1000)
+i <- 1
+for (e in eigenVals) {
+  brwnBridges[[i]] <- e * brwnBridges[[i]]
+  i <- i+1
+}
+for (i in 1:1000) {
+  s <- 0
+  for (j in 1:B) {
+    s <- s + brwnBridges[[j]][i]
+  }
+  v_ell[i] <- s
+}
+v_ell <- sort(v_ell, decreasing = F)
+
+################################################################################
