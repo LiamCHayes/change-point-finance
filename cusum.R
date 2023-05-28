@@ -176,7 +176,7 @@ cusum <- function(A, f_t) {
       result <- rep(0, 9)
       # compute the vector PS(t,A) - (t/T)*PS(T,A)
       for (i in A) {
-        insideSum[i] <- PS(x, A, f_t)[[i]] - x/length(f_t) * PS(length(f_t), A, f_t)[[i]]
+        insideSum[[i]] <- PS(x, A, f_t)[[i]] - x/length(f_t) * PS(length(f_t), A, f_t)[[i]]
       }
       # compute vector norm
       for (i in A) {
@@ -184,7 +184,7 @@ cusum <- function(A, f_t) {
       }
       return(result)
     }))
-  return(cu)
+  return(sum(cu))
 }
 
 
