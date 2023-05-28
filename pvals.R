@@ -82,13 +82,12 @@ PS <- function(t, A, f_t) {
   return(partialSum)
 }
 cusum <- function(A, f_t) {
-  # computes cusum statistic
   cu <- 1/(50*length(A)*length(f_t)**2) * rowSums(sapply(1:length(f_t), function(x) {
     insideSum <- vector('list', length=9)
     result <- rep(0, 9)
     # compute the vector PS(t,A) - (t/T)*PS(T,A)
     for (i in A) {
-      insideSum[i] <- PS(x, A, f_t)[[i]] - x/length(f_t) * PS(length(f_t), A, f_t)[[i]]
+      insideSum[[i]] <- PS(x, A, f_t)[[i]] - x/length(f_t) * PS(length(f_t), A, f_t)[[i]]
     }
     # compute vector norm
     for (i in A) {
@@ -96,7 +95,7 @@ cusum <- function(A, f_t) {
     }
     return(result)
   }))
-  return(cu)
+  return(sum(cu))
 }
 
 # Get data
@@ -228,4 +227,70 @@ for (i in 1:1000) {
 }
 v_ell <- sort(v_ell, decreasing = F)
 
+CUSUM <- cusum(c(1:9), f_t)
+
+which.min(abs(CUSUM[1] - v_ell))
+
+# function to simulate p-values
+getPVals <- function(f_t, B = 10, A = c(1:9)) {
+  covMatrices <- getCovMatrices(f_t)
+  eigenVals <- getEigenvalues(covMatrices, B)
+  brwnBridges <- vector('list', length=B)
+  for (i in 1:length(brwnBridges)) {
+    brwnBridges[[i]] <- integrated_brownian_bridge(1000)
+  }
+  v_ell <- rep(0, 1000)
+  i <- 1
+  for (e in eigenVals) {
+    brwnBridges[[i]] <- e * brwnBridges[[i]]
+    i <- i+1
+  }
+  for (i in 1:1000) {
+    s <- 0
+    for (j in 1:B) {
+      s <- s + brwnBridges[[j]][i]
+    }
+    v_ell[i] <- s
+  }
+  v_ell <- sort(v_ell, decreasing = F)
+  
+  CUSUM <- cusum(A, f_t)
+  
+  pval <- 1 - which.min(abs(CUSUM[1] - v_ell))/1000
+  
+  return(pval)
+}
+
 ################################################################################
+
+
+
+## Test p-values
+nsim <- 100
+numDays <- 200
+A <- 1:9
+
+pvalues <- rep(0, nsim)
+for (i in 1:nsim) {
+  # get random n day date range within data
+  startDate <- sample(sector.df.list[[1]]$Date, 1)
+  while (startDate > max(sector.df.list[[1]]$Date)-numDays) { 
+    # check if there are enough data points given the start date
+    startDate <- sample(sector.df.list[[1]]$Date, 1)
+  }
+  endDate <- startDate + numDays
+  # concatenate vectors 
+  f_t <- concatVectors(startDate, endDate, sector.df.list)
+  
+  pvalues[i] <- getPVals(f_t)
+  if (i %% 10 == 0) print(paste(i/nsim*100, "% done"))
+}
+
+ggplot() +
+  geom_histogram(aes(pvalues)) + 
+  labs(title=paste("Histogram of p-values, Time Period =", numDays, "Days"), 
+       y="", x="p-values")
+  
+
+
+
