@@ -39,7 +39,7 @@ getSectorDfList <- function() {
 ## Create KDE and vectorize
 
 # determine typical range of KDE (CIDR)
-sector <- xlv.r ## Change this to experiment with different sectors
+sector <- xlk.r ## Change this to experiment with different sectors
 minCIDR <- rep(0,100)
 maxCIDR <- rep(0, 100)
 for (i in 1:100) {
@@ -76,6 +76,28 @@ for (i in 1:100) {
 }
 plot(density(minRet, na.rm = T)) ## This shows most of the minimum returns are above -0.001
 plot(density(maxRet, na.rm=T)) ## This shows most of the maximum returns are below 0.001
+
+# determine typical range of KDE (log returns)
+minRet <- rep(0,100)
+maxRet <- rep(0, 100)
+for (i in 1:100) {
+  df <- sector %>% 
+    filter(Date == sample(sector$Date, 1)) %>%
+    mutate(Time = as.character(Time)) %>%
+    filter(substr(Time, nchar(Time), nchar(Time)) == "0")
+  
+  returns <- rep(0, dim(df)[1])
+  for (i in 2:dim(df)[1]) {
+    returns[i] <- log(df$close[i]/df$close[i-1])
+  }
+  df$computedRet <- returns
+  
+  kd <- density(df$computedRet)
+  minRet[i] <- min(kd$x)
+  maxRet[i] <- max(kd$x)
+}
+plot(density(minRet, na.rm = T)) ## This shows most of the minimum log returns are above -0.001
+plot(density(maxRet, na.rm=T)) ## This shows most of the maximum log returns are below 0.001
 
 # function to return vectorized kdes
 kdeVector <- function(dateString, sectorDF, CIDR=T) {
