@@ -12,26 +12,43 @@ library(ggplot2)
 library(rstudioapi)
 
 # helper functions
-getReturns <- function(df) {
+getDateRange <- function(numDays) {
+  # returns a random date range
+  startDate <- sample(sector.df.list[[1]]$Date, 1)
+  while (startDate > max(sector.df.list[[1]]$Date)-numDays) { 
+    # check if there are enough data points given the start date
+    startDate <- sample(sector.df.list[[1]]$Date, 1)
+  }
+  endDate <- startDate + numDays
+  return(c(startDate, endDate))
+}
+getReturns <- function(df, logRet=F) {
   # compute returns and add to dataframe
   returns <- rep(0, dim(df)[1])
-  for (i in 2:dim(df)[1]) {
-    returns[i] <- (df$close[i] - df$close[i-1])/df$close[i-1]
+  if (logRet) {
+    for (i in 2:dim(df)[1]) {
+      returns[i] <- log(df$close[i]/df$close[i-1])
+    }
+  }
+  else {
+    for (i in 2:dim(df)[1]) {
+      returns[i] <- (df$close[i] - df$close[i-1])/df$close[i-1]
+    }
   }
   df$computedRet <- returns
   return(df)
 }
-getSectorDfList <- function() {
+getSectorDfList <- function(logret=F) {
   # return a list of sector data frames 
   sector.df <- list(xlb.r, xle.r, xlf.r, xli.r, xlk.r, xlp.r, xlu.r, xlv.r, xly.r)
-  sector.df <- lapply(sector.df, getReturns)
+  sector.df <- lapply(sector.df, getReturns, logRet=logret)
   sector.df <- 
     lapply(sector.df, function(x) {
       mutate(x, Date = as.Date(Date, "%m/%d/%Y")) 
     })
   return(sector.df)
 }
-kdeVector <- function(dateString, sectorDF, CIDR=T) {
+kdeVector <- function(dateString, sectorDF, CIDR=F) {
   # return vectorized (discrete) kdes
   df <- sectorDF %>% 
     filter(Date == as.Date(dateString, "%m%d%Y")) %>%
@@ -116,17 +133,16 @@ sector.df.list <- getSectorDfList()
 
 
 # get random n day date range
-numDays <- 30
-startDate <- sample(sector.df.list[[1]]$Date, 1)
-endDate <- startDate + numDays
+dateRange <- getDateRange(30)
 # concatenate vectors 
-f_t <- concatVectors(startDate, endDate, sector.df.list)
+f_t <- concatVectors(dateRange[1], dateRange[2], sector.df.list)
 
 # Covariance matrix for the first sector
 covMatrix <- matrix(rep(0, 50**2), nrow=50, ncol=50)
 for (i in 2:length(f_t)) {
   covMatrix <- covMatrix + as.matrix(f_t[[i]][[1]] - f_t[[i-1]][[1]]) %*% t(as.matrix(f_t[[i]][[1]] - f_t[[i-1]][[1]]))
 }
+covMatrix <- 1/(2*length(f_t)) * covMatrix
 
 # Covariance matrix for all sectors
 covMatrices <- lapply(1:9, function(a) {
@@ -134,7 +150,7 @@ covMatrices <- lapply(1:9, function(a) {
   for (i in 2:length(f_t)) {
     covMatrix <- covMatrix + as.matrix(f_t[[i]][[a]] - f_t[[i-1]][[a]]) %*% t(as.matrix(f_t[[i]][[a]] - f_t[[i-1]][[a]]))
   }
-  return(covMatrix)
+  return(1/(2*length(f_t)) * covMatrix)
 })
 
 # function for covariance matrix
@@ -144,7 +160,7 @@ getCovMatrices <- function(f_t) {
     for (i in 2:length(f_t)) {
       covMatrix <- covMatrix + as.matrix(f_t[[i]][[a]] - f_t[[i-1]][[a]]) %*% t(as.matrix(f_t[[i]][[a]] - f_t[[i-1]][[a]]))
     }
-    return(covMatrix)
+    return(1/(2*length(f_t)) * covMatrix)
   })
   return(covMatrices)
 }
@@ -269,21 +285,18 @@ getPVals <- function(f_t, B = 10, A = c(1:9)) {
 nsim <- 100
 numDays <- 200
 A <- 1:9
+sector.df.list <- getSectorDfList(logret = F)
 
 pvalues <- rep(0, nsim)
 for (i in 1:nsim) {
   # get random n day date range within data
-  startDate <- sample(sector.df.list[[1]]$Date, 1)
-  while (startDate > max(sector.df.list[[1]]$Date)-numDays) { 
-    # check if there are enough data points given the start date
-    startDate <- sample(sector.df.list[[1]]$Date, 1)
-  }
-  endDate <- startDate + numDays
+  dateRange <- getDateRange(numDays)
   # concatenate vectors 
-  f_t <- concatVectors(startDate, endDate, sector.df.list)
+  f_t <- concatVectors(dateRange[1], dateRange[2], sector.df.list)
   
-  pvalues[i] <- getPVals(f_t)
-  if (i %% 10 == 0) print(paste(i/nsim*100, "% done"))
+  p <- getPVals(f_t)
+  pvalues[i] <- p
+  print(paste("(", i, "/", nsim, ") p-value for", numDays, "day interval (", dateRange[1], "-", dateRange[2], ") :", p))
 }
 
 ggplot() +
@@ -291,6 +304,5 @@ ggplot() +
   labs(title=paste("Histogram of p-values, Time Period =", numDays, "Days"), 
        y="", x="p-values")
   
-
-
+plot(pvalues)
 
