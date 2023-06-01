@@ -10,9 +10,10 @@
 library(tidyverse)
 library(ggplot2)
 library(rstudioapi)
+library(ssdtools)
 
 # helper functions
-getDateRange <- function(numDays) {
+getDateRange <- function(numDays, sector.df.list) {
   # returns a random date range
   startDate <- sample(sector.df.list[[1]]$Date, 1)
   while (startDate > max(sector.df.list[[1]]$Date)-numDays) { 
@@ -281,28 +282,113 @@ getPVals <- function(f_t, B = 10, A = c(1:9)) {
 
 
 
-## Test p-values
+## Simulate p-values
 nsim <- 100
-numDays <- 200
-A <- 1:9
+numDays <- 500
+A <- c(2,3,5)
 sector.df.list <- getSectorDfList(logret = F)
 
 pvalues <- rep(0, nsim)
+dates <- rep(0, nsim)
 for (i in 1:nsim) {
   # get random n day date range within data
-  dateRange <- getDateRange(numDays)
+  dateRange <- getDateRange(numDays, sector.df.list)
   # concatenate vectors 
   f_t <- concatVectors(dateRange[1], dateRange[2], sector.df.list)
   
   p <- getPVals(f_t)
+  dates[i] <- dateRange[1]
   pvalues[i] <- p
   print(paste("(", i, "/", nsim, ") p-value for", numDays, "day interval (", dateRange[1], "-", dateRange[2], ") :", p))
 }
+class(dates) <- "Date"
+
+
+
+## Plot results of the simulation
+ggplot() +
+  geom_histogram(aes(pvalues), bins=30) + 
+  labs(title="Histogram of p-values", y="", x="p-values")
+
+#ggsave("plots/pvals_500d_3vol.pdf", width = 6, height = 4)
+
+pvals <- data.frame(dates, pvalues)
+ggplot(data=pvals) + 
+  geom_point(aes(x=dates, y=pvalues)) +
+  geom_hline(aes(yintercept=0.05), col="red", size=1) +
+  labs(title = "P-values VS Start Dates", y="P-value", x="Year") +
+  scale_y_continuous(breaks = scales::pretty_breaks(n=10)) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y")
+  
+#ggsave("plots/p_vs_date_500d_3vol.pdf", width = 6, height = 4)
+
+ggplot(data=pvals[pvalues<0.05,]) + 
+  geom_point(aes(x=dates, y=pvalues)) +
+  geom_segment(aes(y=pvalues, x=dates, yend=pvalues, xend=dates+numDays), size=2, alpha=0.75)+
+  geom_point(aes(x=dates+numDays, y=pvalues))+ 
+  geom_vline(aes(xintercept=max(dates)), col="red", size=1) +
+  geom_vline(aes(xintercept=min(dates+numDays)), col="red", size=1) +
+  geom_xribbon(aes(xmin=max(dates), xmax=min(dates+numDays), y=pvalues), fill='red', alpha=0.5) +
+  labs(title = "Significant Result Time Period Overlap", y="P-value", x="Date") +
+  scale_y_continuous(breaks = scales::pretty_breaks(n=5)) +
+  scale_x_date(date_breaks = "3 months", date_labels = "%b %Y")
+
+#ggsave("plots/sig_result_overlap.pdf", width = 6, height = 4)
+
+data.frame(pvalues) %>%
+  summarise(Mean = mean(pvalues), Min = min(pvalues), Max = max(pvalues), 
+            SD = sd(pvalues), Rejections = sum((pvalues < 0.05)), 
+            Percent_Rejected = sum((pvalues < 0.05))/nsim) %>%
+  knitr::kable()
+
+print(paste("Significant time period overlap is from", max(pvals[pvalues<0.05,]$dates), "to", min(pvals[pvalues<0.05,]$dates+numDays)))
+
+
+
+## Narrow down results to get a smaller date range
+nsim <- 100
+A <- c(2,3,5)
+sector.df.list <- lapply(getSectorDfList(logret = F), function(x) filter(x, Date >= as.Date("2008-12-26")))
+sector.df.list <- lapply(sector.df.list, function(x) filter(x, Date <= as.Date('2009-03-30')))
+numDays <- 30
+
+pvalues <- rep(0, nsim)
+dates <- rep(0, nsim)
+for (i in 1:nsim) {
+  # get random n day date range within data
+  dateRange <- getDateRange(numDays, sector.df.list)
+  # concatenate vectors 
+  f_t <- concatVectors(dateRange[1], dateRange[2], sector.df.list)
+  
+  p <- getPVals(f_t)
+  dates[i] <- dateRange[1]
+  pvalues[i] <- p
+  print(paste("(", i, "/", nsim, ") p-value for", numDays, "day interval (", dateRange[1], "-", dateRange[2], ") :", p))
+}
+class(dates) <- "Date"
 
 ggplot() +
-  geom_histogram(aes(pvalues)) + 
-  labs(title=paste("Histogram of p-values, Time Period =", numDays, "Days"), 
-       y="", x="p-values")
-  
-plot(pvalues)
+  geom_histogram(aes(pvalues), bins=30) + 
+  labs(title="Histogram of p-values", y="", x="p-values")
 
+pvals <- data.frame(dates, pvalues)
+ggplot(data=pvals) + 
+  geom_point(aes(x=dates, y=pvalues)) +
+  geom_hline(aes(yintercept=0.05), col="red", size=1) +
+  labs(title = "P-values VS Start Dates", y="P-value", x="Year") +
+  scale_y_continuous(breaks = scales::pretty_breaks(n=10)) +
+  scale_x_date(date_breaks = "1 month", date_labels = "%Y")
+
+ggplot(data=pvals[pvalues<0.05,]) + 
+  geom_point(aes(x=dates, y=pvalues)) +
+  geom_segment(aes(y=pvalues, x=dates, yend=pvalues, xend=dates+numDays), size=2, alpha=0.75)+
+  geom_point(aes(x=dates+numDays, y=pvalues))+ 
+  geom_vline(aes(xintercept=max(dates)), col="red", size=1) +
+  geom_vline(aes(xintercept=min(dates+numDays)), col="red", size=1) +
+  geom_xribbon(aes(xmin=max(dates), xmax=min(dates+numDays), y=pvalues), fill='red', alpha=0.5) +
+  labs(title = "Significant Result Time Period Overlap", y="P-value", x="Date") +
+  scale_y_continuous(breaks = scales::pretty_breaks(n=5)) +
+  scale_x_date(date_breaks = "3 months", date_labels = "%b %Y")
+
+print(paste("Significant time period overlap is from", max(pvals[pvalues<0.05,]$dates), "to", min(pvals[pvalues<0.05,]$dates+numDays)))
+      
