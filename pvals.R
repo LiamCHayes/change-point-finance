@@ -86,6 +86,20 @@ concatVectors <- function(startDate, endDate, sector.dfs, cidr=F) {
   }
   return(f_t)
 }
+concatDailyVectors <- function(f_t, A=c(1:9)) {
+  dailyVectors <- vector('list', length=(length(f_t)))
+  i = 1
+  for (f in f_t) {
+    dailyVector <- vector('numeric')
+    for (a in A) {
+      if (length(dailyVector) == 0) dailyVector <- f[[a]]
+      else dailyVector <- c(dailyVector, f[[a]])
+    }
+    dailyVectors[[i]] <- dailyVector
+    i <- i+1
+  }
+  return(dailyVectors)
+}
 PS <- function(t, A, f_t) {
   # computes partial sum of concatenated vectors
   # A is a list of ints representing a subset of sectors (indexed from 1-9)
@@ -143,27 +157,26 @@ covMatrix <- matrix(rep(0, 50**2), nrow=50, ncol=50)
 for (i in 2:length(f_t)) {
   covMatrix <- covMatrix + as.matrix(f_t[[i]][[1]] - f_t[[i-1]][[1]]) %*% t(as.matrix(f_t[[i]][[1]] - f_t[[i-1]][[1]]))
 }
-covMatrix <- 1/(2*length(f_t)) * covMatrix
+covMatrix <- 1/(100*length(f_t)) * covMatrix
 
 # Covariance matrix for all sectors
-covMatrices <- lapply(1:9, function(a) {
-  covMatrix <- matrix(rep(0, 50**2), nrow=50, ncol=50)
-  for (i in 2:length(f_t)) {
-    covMatrix <- covMatrix + as.matrix(f_t[[i]][[a]] - f_t[[i-1]][[a]]) %*% t(as.matrix(f_t[[i]][[a]] - f_t[[i-1]][[a]]))
-  }
-  return(1/(2*length(f_t)) * covMatrix)
-})
+covMatrix <- matrix(rep(0, (50*9)**2), nrow=50*9, ncol=50*9)
+dailyVectors <- concatDailyVectors(f_t, 1:9)
+for (i in 2:length(dailyVectors)) {
+  covMatrix <- covMatrix + as.matrix(dailyVectors[[i]] - dailyVectors[[i-1]]) %*% t(as.matrix(dailyVectors[[i]] - dailyVectors[[i-1]]))
+}
+covMatrix <- 1/(100*9*length(dailyVectors)) * covMatrix
+
 
 # function for covariance matrix
-getCovMatrices <- function(f_t) {
-  covMatrices <- lapply(1:9, function(a) {
-    covMatrix <- matrix(rep(0, 50**2), nrow=50, ncol=50)
-    for (i in 2:length(f_t)) {
-      covMatrix <- covMatrix + as.matrix(f_t[[i]][[a]] - f_t[[i-1]][[a]]) %*% t(as.matrix(f_t[[i]][[a]] - f_t[[i-1]][[a]]))
-    }
-    return(1/(2*length(f_t)) * covMatrix)
-  })
-  return(covMatrices)
+getCovMatrix <- function(f_t, A = c(1:9)) {
+  covMatrix <- matrix(rep(0, (50*length(A))**2), nrow=50*length(A), ncol=50*length(A))
+  dailyVectors <- concatDailyVectors(f_t, A)
+  for (i in 2:length(dailyVectors)) {
+    covMatrix <- covMatrix + as.matrix(dailyVectors[[i]] - dailyVectors[[i-1]]) %*% t(as.matrix(dailyVectors[[i]] - dailyVectors[[i-1]]))
+  }
+  covMatrix <- 1/(100*length(A)*length(dailyVectors)) * covMatrix
+  return(covMatrix)
 }
 
 
@@ -176,15 +189,9 @@ getCovMatrices <- function(f_t) {
 
 
 # function to calculate first B eigenvalues
-getEigenvalues <- function(covMatrices, B=10) {
-  eigenValues <- lapply(covMatrices, function(x) {
-    eigen(x, symmetric=T, only.values=T)
-  })
-  
-  eigenValues <- lapply(eigenValues, function(x) {
-    return(x$values[1:B])
-  })
-  return(eigenValues)
+getEigenvalues <- function(covMatrix, B=10) {
+  eigenValues <- eigen(covMatrix, symmetric = T, only.values = T)$values
+  return(eigenValues[1:B])
 }
 
 
@@ -222,36 +229,10 @@ integrated_brownian_bridge <- function(K) {
   return(results)
 }
 
-B <- 10
-covMatrices <- getCovMatrices(f_t)
-eigenVals <- getEigenvalues(covMatrices, B)
-brwnBridges <- vector('list', length=B)
-for (i in 1:length(brwnBridges)) {
-  brwnBridges[[i]] <- integrated_brownian_bridge(1000)
-}
-v_ell <- rep(0, 1000)
-i <- 1
-for (e in eigenVals) {
-  brwnBridges[[i]] <- e * brwnBridges[[i]]
-  i <- i+1
-}
-for (i in 1:1000) {
-  s <- 0
-  for (j in 1:B) {
-    s <- s + brwnBridges[[j]][i]
-  }
-  v_ell[i] <- s
-}
-v_ell <- sort(v_ell, decreasing = F)
-
-CUSUM <- cusum(c(1:9), f_t)
-
-which.min(abs(CUSUM[1] - v_ell))
-
 # function to simulate p-values
-getPVals <- function(f_t, B = 10, A = c(1:9)) {
-  covMatrices <- getCovMatrices(f_t)
-  eigenVals <- getEigenvalues(covMatrices, B)
+getPVals <- function(f_t, B = 30, A = c(1:9)) {
+  covMatrix <- getCovMatrix(f_t, A)
+  eigenVals <- getEigenvalues(covMatrix, B)
   brwnBridges <- vector('list', length=B)
   for (i in 1:length(brwnBridges)) {
     brwnBridges[[i]] <- integrated_brownian_bridge(1000)
@@ -284,8 +265,8 @@ getPVals <- function(f_t, B = 10, A = c(1:9)) {
 
 ## Simulate p-values
 nsim <- 100
-numDays <- 500
-A <- c(2,3,5)
+numDays <- 30
+A <- c(1:9)
 sector.df.list <- getSectorDfList(logret = F)
 
 pvalues <- rep(0, nsim)
@@ -377,7 +358,7 @@ ggplot(data=pvals) +
   geom_hline(aes(yintercept=0.05), col="red", size=1) +
   labs(title = "P-values VS Start Dates", y="P-value", x="Year") +
   scale_y_continuous(breaks = scales::pretty_breaks(n=10)) +
-  scale_x_date(date_breaks = "1 month", date_labels = "%Y")
+  scale_x_date(date_breaks = "10 days", date_labels = "%b %d")
 
 ggplot(data=pvals[pvalues<0.05,]) + 
   geom_point(aes(x=dates, y=pvalues)) +
