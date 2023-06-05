@@ -129,46 +129,6 @@ cusum <- function(A, f_t) {
   }))
   return(sum(cu))
 }
-
-# Get data
-setwd(dirname(getActiveDocumentContext()$path))
-load("9ETFs.RData")
-sectors <- c('xlb' = 'materials', 'xle' = 'energy', 'xlf' = 'financials',
-             'xli' = 'industrials', 'xlk' = 'technology', 'xlp' = 'consumer staples',
-             'xlu' = 'utilities', 'xlv' = 'health care', 'xly' = 'consumer discretionary')
-sector.df.list <- getSectorDfList()
-
-
-################################################################################
-
-
-
-## Covariance matrix
-################################################################################
-
-
-# get random n day date range
-dateRange <- getDateRange(30)
-# concatenate vectors 
-f_t <- concatVectors(dateRange[1], dateRange[2], sector.df.list)
-
-# Covariance matrix for the first sector
-covMatrix <- matrix(rep(0, 50**2), nrow=50, ncol=50)
-for (i in 2:length(f_t)) {
-  covMatrix <- covMatrix + as.matrix(f_t[[i]][[1]] - f_t[[i-1]][[1]]) %*% t(as.matrix(f_t[[i]][[1]] - f_t[[i-1]][[1]]))
-}
-covMatrix <- 1/(100*length(f_t)) * covMatrix
-
-# Covariance matrix for all sectors
-covMatrix <- matrix(rep(0, (50*9)**2), nrow=50*9, ncol=50*9)
-dailyVectors <- concatDailyVectors(f_t, 1:9)
-for (i in 2:length(dailyVectors)) {
-  covMatrix <- covMatrix + as.matrix(dailyVectors[[i]] - dailyVectors[[i-1]]) %*% t(as.matrix(dailyVectors[[i]] - dailyVectors[[i-1]]))
-}
-covMatrix <- 1/(100*9*length(dailyVectors)) * covMatrix
-
-
-# function for covariance matrix
 getCovMatrix <- function(f_t, A = c(1:9)) {
   covMatrix <- matrix(rep(0, (50*length(A))**2), nrow=50*length(A), ncol=50*length(A))
   dailyVectors <- concatDailyVectors(f_t, A)
@@ -178,32 +138,10 @@ getCovMatrix <- function(f_t, A = c(1:9)) {
   covMatrix <- 1/(100*length(A)*length(dailyVectors)) * covMatrix
   return(covMatrix)
 }
-
-
-################################################################################
-
-
-
-## Eigenvalues
-################################################################################
-
-
-# function to calculate first B eigenvalues
 getEigenvalues <- function(covMatrix, B=10) {
   eigenValues <- eigen(covMatrix, symmetric = T, only.values = T)$values
   return(eigenValues[1:B])
 }
-
-
-
-################################################################################
-
-
-
-## Simulate p-values
-################################################################################
-
-
 brownian_bridge <- function() {
   # Generate a Brownian bridge evaluated on the grid 1:1000/1000
   t <- seq(0, 1, length.out = 1001)  # Grid from 1 to 1000 divided by 1000
@@ -216,7 +154,6 @@ brownian_bridge <- function() {
   B <- W - t * W[length(W)]
   return(B)
 }
-
 integrated_brownian_bridge <- function(K) {
   # Generate a square integrated Brownian bridge
   results = 1:K*0
@@ -228,8 +165,6 @@ integrated_brownian_bridge <- function(K) {
   }
   return(results)
 }
-
-# function to simulate p-values
 getPVals <- function(f_t, B = 30, A = c(1:9)) {
   covMatrix <- getCovMatrix(f_t, A)
   eigenVals <- getEigenvalues(covMatrix, B)
@@ -259,18 +194,49 @@ getPVals <- function(f_t, B = 30, A = c(1:9)) {
   return(pval)
 }
 
+
+# Get data
+setwd(dirname(getActiveDocumentContext()$path))
+load("9ETFs.RData")
+sectors <- c('xlb' = 'materials', 'xle' = 'energy', 'xlf' = 'financials',
+             'xli' = 'industrials', 'xlk' = 'technology', 'xlp' = 'consumer staples',
+             'xlu' = 'utilities', 'xlv' = 'health care', 'xly' = 'consumer discretionary')
+
+
 ################################################################################
 
 
 
+
 ## Simulate p-values
-nsim <- 100
+nsim <- 10000
+numDays <- 10
+A <- c(1:9)
+sector.df.list <- getSectorDfList(logret = F)
+
+pvalues10 <- rep(0, nsim)
+dates10 <- rep(0, nsim)
+for (i in 1:nsim) {
+  # get random n day date range within data
+  dateRange <- getDateRange(numDays, sector.df.list)
+  # concatenate vectors 
+  f_t <- concatVectors(dateRange[1], dateRange[2], sector.df.list)
+  
+  p <- getPVals(f_t)
+  dates10[i] <- dateRange[1]
+  pvalues10[i] <- p
+  print(paste("(", i, "/", nsim, ") p-value for", numDays, "day interval (", dateRange[1], "-", dateRange[2], ") :", p))
+}
+class(dates10) <- "Date"
+
+
+nsim <- 10000
 numDays <- 30
 A <- c(1:9)
 sector.df.list <- getSectorDfList(logret = F)
 
-pvalues <- rep(0, nsim)
-dates <- rep(0, nsim)
+pvalues30 <- rep(0, nsim)
+dates30 <- rep(0, nsim)
 for (i in 1:nsim) {
   # get random n day date range within data
   dateRange <- getDateRange(numDays, sector.df.list)
@@ -278,98 +244,8 @@ for (i in 1:nsim) {
   f_t <- concatVectors(dateRange[1], dateRange[2], sector.df.list)
   
   p <- getPVals(f_t)
-  dates[i] <- dateRange[1]
-  pvalues[i] <- p
+  dates30[i] <- dateRange[1]
+  pvalues30[i] <- p
   print(paste("(", i, "/", nsim, ") p-value for", numDays, "day interval (", dateRange[1], "-", dateRange[2], ") :", p))
 }
-class(dates) <- "Date"
-
-
-
-## Plot results of the simulation
-ggplot() +
-  geom_histogram(aes(pvalues), bins=30) + 
-  labs(title="Histogram of p-values", y="", x="p-values")
-
-#ggsave("plots/new_cov_30d_B50.pdf", width = 6, height = 4)
-
-pvals <- data.frame(dates, pvalues)
-ggplot(data=pvals) + 
-  geom_point(aes(x=dates, y=pvalues)) +
-  geom_hline(aes(yintercept=0.05), col="red", size=1) +
-  labs(title = "P-values VS Start Dates", y="P-value", x="Year") +
-  scale_y_continuous(breaks = scales::pretty_breaks(n=10)) +
-  scale_x_date(date_breaks = "1 year", date_labels = "%Y")
-  
-#ggsave("plots/p_vs_date_500d_3vol.pdf", width = 6, height = 4)
-
-ggplot(data=pvals[pvalues<0.05,]) + 
-  geom_point(aes(x=dates, y=pvalues)) +
-  geom_segment(aes(y=pvalues, x=dates, yend=pvalues, xend=dates+numDays), size=2, alpha=0.75)+
-  geom_point(aes(x=dates+numDays, y=pvalues))+ 
-  geom_vline(aes(xintercept=max(dates)), col="red", size=1) +
-  geom_vline(aes(xintercept=min(dates+numDays)), col="red", size=1) +
-  geom_xribbon(aes(xmin=max(dates), xmax=min(dates+numDays), y=pvalues), fill='red', alpha=0.5) +
-  labs(title = "Significant Result Time Period Overlap", y="P-value", x="Date") +
-  scale_y_continuous(breaks = scales::pretty_breaks(n=5)) +
-  scale_x_date(date_breaks = "3 months", date_labels = "%b %Y")
-
-#ggsave("plots/sig_result_overlap.pdf", width = 6, height = 4)
-
-data.frame(pvalues) %>%
-  summarise(Mean = mean(pvalues), Min = min(pvalues), Max = max(pvalues), 
-            SD = sd(pvalues), Rejections = sum((pvalues < 0.05)), 
-            Percent_Rejected = sum((pvalues < 0.05))/nsim) %>%
-  knitr::kable()
-
-print(paste("Significant time period overlap is from", max(pvals[pvalues<0.05,]$dates), "to", min(pvals[pvalues<0.05,]$dates+numDays)))
-
-
-
-## Narrow down results to get a smaller date range
-nsim <- 100
-A <- c(2,3,5)
-sector.df.list <- lapply(getSectorDfList(logret = F), function(x) filter(x, Date >= as.Date("2008-12-26")))
-sector.df.list <- lapply(sector.df.list, function(x) filter(x, Date <= as.Date('2009-03-30')))
-numDays <- 30
-
-pvalues <- rep(0, nsim)
-dates <- rep(0, nsim)
-for (i in 1:nsim) {
-  # get random n day date range within data
-  dateRange <- getDateRange(numDays, sector.df.list)
-  # concatenate vectors 
-  f_t <- concatVectors(dateRange[1], dateRange[2], sector.df.list)
-  
-  p <- getPVals(f_t)
-  dates[i] <- dateRange[1]
-  pvalues[i] <- p
-  print(paste("(", i, "/", nsim, ") p-value for", numDays, "day interval (", dateRange[1], "-", dateRange[2], ") :", p))
-}
-class(dates) <- "Date"
-
-ggplot() +
-  geom_histogram(aes(pvalues), bins=30) + 
-  labs(title="Histogram of p-values", y="", x="p-values")
-
-pvals <- data.frame(dates, pvalues)
-ggplot(data=pvals) + 
-  geom_point(aes(x=dates, y=pvalues)) +
-  geom_hline(aes(yintercept=0.05), col="red", size=1) +
-  labs(title = "P-values VS Start Dates", y="P-value", x="Year") +
-  scale_y_continuous(breaks = scales::pretty_breaks(n=10)) +
-  scale_x_date(date_breaks = "10 days", date_labels = "%b %d")
-
-ggplot(data=pvals[pvalues<0.05,]) + 
-  geom_point(aes(x=dates, y=pvalues)) +
-  geom_segment(aes(y=pvalues, x=dates, yend=pvalues, xend=dates+numDays), size=2, alpha=0.75)+
-  geom_point(aes(x=dates+numDays, y=pvalues))+ 
-  geom_vline(aes(xintercept=max(dates)), col="red", size=1) +
-  geom_vline(aes(xintercept=min(dates+numDays)), col="red", size=1) +
-  geom_xribbon(aes(xmin=max(dates), xmax=min(dates+numDays), y=pvalues), fill='red', alpha=0.5) +
-  labs(title = "Significant Result Time Period Overlap", y="P-value", x="Date") +
-  scale_y_continuous(breaks = scales::pretty_breaks(n=5)) +
-  scale_x_date(date_breaks = "3 months", date_labels = "%b %Y")
-
-print(paste("Significant time period overlap is from", max(pvals[pvalues<0.05,]$dates), "to", min(pvals[pvalues<0.05,]$dates+numDays)))
-      
+class(dates30) <- "Date"
