@@ -209,7 +209,7 @@ sectors <- c('xlb' = 'materials', 'xle' = 'energy', 'xlf' = 'financials',
 
 
 ## Simulate p-values
-nsim <- 10000
+nsim <- 500
 numDays <- 10
 A <- c(1:9)
 sector.df.list <- getSectorDfList(logret = F)
@@ -222,7 +222,7 @@ for (i in 1:nsim) {
   # concatenate vectors 
   f_t <- concatVectors(dateRange[1], dateRange[2], sector.df.list)
   
-  p <- getPVals(f_t)
+  p <- getPVals(f_t, B=50)
   dates10[i] <- dateRange[1]
   pvalues10[i] <- p
   print(paste("(", i, "/", nsim, ") p-value for", numDays, "day interval (", dateRange[1], "-", dateRange[2], ") :", p))
@@ -230,10 +230,9 @@ for (i in 1:nsim) {
 class(dates10) <- "Date"
 
 
-nsim <- 10000
+nsim <- 500
 numDays <- 30
 A <- c(1:9)
-sector.df.list <- getSectorDfList(logret = F)
 
 pvalues30 <- rep(0, nsim)
 dates30 <- rep(0, nsim)
@@ -243,9 +242,36 @@ for (i in 1:nsim) {
   # concatenate vectors 
   f_t <- concatVectors(dateRange[1], dateRange[2], sector.df.list)
   
-  p <- getPVals(f_t)
+  p <- getPVals(f_t, B=50)
   dates30[i] <- dateRange[1]
   pvalues30[i] <- p
   print(paste("(", i, "/", nsim, ") p-value for", numDays, "day interval (", dateRange[1], "-", dateRange[2], ") :", p))
 }
 class(dates30) <- "Date"
+
+
+## Plot results
+ggplot() +
+  geom_histogram(aes(pvalues10), bins=30) + 
+  labs(title="Histogram of p-values", y="", x="p-values")
+
+pvals10 <- data.frame(dates10, pvalues10)
+ggplot(data=pvals10) + 
+  geom_point(aes(x=dates10, y=pvalues10)) +
+  geom_hline(aes(yintercept=0.05), col="red", size=1) +
+  labs(title = "P-values VS Start Dates", y="P-value", x="Year") +
+  scale_y_continuous(breaks = scales::pretty_breaks(n=10)) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y")
+
+#ggsave("plots/pval_sim_10d_n500.pdf", width=6, height=4)
+
+data.frame(pvalues10) %>%
+  summarise(Mean = mean(pvalues10), Min = min(pvalues10), Max = max(pvalues10), 
+            SD = sd(pvalues10), Rejections = sum((pvalues10 < 0.05)), 
+            Percent_Rejected = sum((pvalues10 < 0.05))/nsim) %>%
+  knitr::kable()
+
+ggplot(data=pvals10[pvalues10<0.05,]) +
+  geom_point(aes(x=dates10, y=pvalues10)) +
+  labs(x="Year", y="P-values", title="Significant P-values") +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y")
