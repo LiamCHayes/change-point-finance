@@ -255,6 +255,8 @@ ggplot() +
   geom_histogram(aes(pvalues10), bins=30) + 
   labs(title="Histogram of p-values", y="", x="p-values")
 
+#ggsave("plots/pval_hist_10d_n500.pdf", width=6, height=4)
+
 pvals10 <- data.frame(dates10, pvalues10)
 ggplot(data=pvals10) + 
   geom_point(aes(x=dates10, y=pvalues10)) +
@@ -274,4 +276,6 @@ data.frame(pvalues10) %>%
 ggplot(data=pvals10[pvalues10<0.05,]) +
   geom_point(aes(x=dates10, y=pvalues10)) +
   labs(x="Year", y="P-values", title="Significant P-values") +
-  scale_x_date(date_breaks = "1 year", date_labels = "%Y")
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") 
+
+
