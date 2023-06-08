@@ -1,0 +1,228 @@
+---
+title: "2008 Financial Crisis Change Point Analysis"
+author: "Liam Hayes"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Load packages
+library(tidyverse)
+library(ggplot2)
+library(rstudioapi)
+library(ssdtools)
+
+# helper functions
+getDateRange <- function(numDays, sector.df.list) {
+  # returns a random date range
+  startDate <- sample(sector.df.list[[1]]$Date, 1)
+  while (startDate > max(sector.df.list[[1]]$Date)-numDays) { 
+    # check if there are enough data points given the start date
+    startDate <- sample(sector.df.list[[1]]$Date, 1)
+  }
+  endDate <- startDate + numDays
+  return(c(startDate, endDate))
+}
+getReturns <- function(df, logRet=F) {
+  # compute returns and add to dataframe
+  returns <- rep(0, dim(df)[1])
+  if (logRet) {
+    for (i in 2:dim(df)[1]) {
+      returns[i] <- log(df$close[i]/df$close[i-1])
+    }
+  }
+  else {
+    for (i in 2:dim(df)[1]) {
+      returns[i] <- (df$close[i] - df$close[i-1])/df$close[i-1]
+    }
+  }
+  df$computedRet <- returns
+  return(df)
+}
+getSectorDfList <- function(logret=F) {
+  # return a list of sector data frames 
+  sector.df <- list(xlb.r, xle.r, xlf.r, xli.r, xlk.r, xlp.r, xlu.r, xlv.r, xly.r)
+  sector.df <- lapply(sector.df, getReturns, logRet=logret)
+  sector.df <- 
+    lapply(sector.df, function(x) {
+      mutate(x, Date = as.Date(Date, "%m/%d/%Y")) 
+    })
+  return(sector.df)
+}
+kdeVector <- function(dateString, sectorDF, CIDR=F) {
+  # return vectorized (discrete) kdes
+  df <- sectorDF %>% 
+    filter(Date == as.Date(dateString, "%m%d%Y")) %>%
+    mutate(Time = as.character(Time)) %>%
+    filter(substr(Time, nchar(Time), nchar(Time)) == "0")
+  
+  if (CIDR) {
+    kd <- density(df$CIDR)
+    pointsOnSupport <- seq(-0.04, 0.04, length.out=50)
+    vectorKDE <- rep(0, 50)
+    for (i in 1:50) vectorKDE[i] <- kd$y[which.min(abs(kd$x - pointsOnSupport[i]))]
+  }
+  else {
+    kd <- density(df$computedRet)
+    pointsOnSupport <- seq(-0.001, 0.001, length.out=50)
+    vectorKDE <- rep(0, 50)
+    for (i in 1:50) vectorKDE[i] <- kd$y[which.min(abs(kd$x - pointsOnSupport[i]))]
+  }
+  return(vectorKDE)
+}
+concatVectors <- function(startDate, endDate, sector.dfs, cidr=F) {
+  # concatenate vectors of kdes for a certain time period
+  sector.df.timeFrame <- 
+    lapply(sector.dfs, function(x) {
+      filter(x, Date > as.Date(startDate, "%m/%d/%Y"),
+             Date < as.Date(endDate, "%m/%d/%Y")
+      )
+    })
+  tradingDays <- unique(sector.df.timeFrame[[1]]$Date)
+  f_t <- rep(list(c(0,0,0,0,0,0,0,0,0)), length(tradingDays))
+  for (i in 1:length(tradingDays)) {
+    t <- lapply(sector.df.timeFrame, kdeVector, dateString=tradingDays[i], CIDR=cidr)
+    for (j in 1:9) f_t[[i]][j] <- t[j]
+  }
+  return(f_t)
+}
+concatDailyVectors <- function(f_t, A=c(1:9)) {
+  dailyVectors <- vector('list', length=(length(f_t)))
+  i = 1
+  for (f in f_t) {
+    dailyVector <- vector('numeric')
+    for (a in A) {
+      if (length(dailyVector) == 0) dailyVector <- f[[a]]
+      else dailyVector <- c(dailyVector, f[[a]])
+    }
+    dailyVectors[[i]] <- dailyVector
+    i <- i+1
+  }
+  return(dailyVectors)
+}
+PS <- function(t, A, f_t) {
+  # computes partial sum of concatenated vectors
+  # A is a list of ints representing a subset of sectors (indexed from 1-9)
+  # t is the stopping point of the sum
+  partialSum <- vector('list', length=9)
+  for (s in A) {
+    for (i in 1:t) {
+      if (i == 1) partialSum[[s]] <- f_t[[i]][[s]]
+      else partialSum[[s]] <- partialSum[[s]] + f_t[[i]][[s]]
+    }
+  }
+  return(partialSum)
+}
+cusum <- function(A, f_t) {
+  cu <- 1/(50*length(A)*length(f_t)**2) * rowSums(sapply(1:length(f_t), function(x) {
+    insideSum <- vector('list', length=9)
+    result <- rep(0, 9)
+    # compute the vector PS(t,A) - (t/T)*PS(T,A)
+    for (i in A) {
+      insideSum[[i]] <- PS(x, A, f_t)[[i]] - x/length(f_t) * PS(length(f_t), A, f_t)[[i]]
+    }
+    # compute vector norm
+    for (i in A) {
+      for (num in insideSum[[i]]) result[i] <- result[i] + num**2
+    }
+    return(result)
+  }))
+  return(sum(cu))
+}
+getCovMatrix <- function(f_t, A = c(1:9)) {
+  covMatrix <- matrix(rep(0, (50*length(A))**2), nrow=50*length(A), ncol=50*length(A))
+  dailyVectors <- concatDailyVectors(f_t, A)
+  for (i in 2:length(dailyVectors)) {
+    covMatrix <- covMatrix + as.matrix(dailyVectors[[i]] - dailyVectors[[i-1]]) %*% t(as.matrix(dailyVectors[[i]] - dailyVectors[[i-1]]))
+  }
+  covMatrix <- 1/(100*length(A)*length(dailyVectors)) * covMatrix
+  return(covMatrix)
+}
+getEigenvalues <- function(covMatrix, B=10) {
+  eigenValues <- eigen(covMatrix, symmetric = T, only.values = T)$values
+  return(eigenValues[1:B])
+}
+brownian_bridge <- function() {
+  # Generate a Brownian bridge evaluated on the grid 1:1000/1000
+  t <- seq(0, 1, length.out = 1001)  # Grid from 1 to 1000 divided by 1000
+  dt <- diff(t)  # Calculate the differences between adjacent points
+  # Generate standard Brownian motion
+  dW <- sqrt(dt) * rnorm(length(dt))
+  W <- c(0, cumsum(dW))
+  # Generate Brownian bridge as linear combination of Brownian motion with
+  # itself
+  B <- W - t * W[length(W)]
+  return(B)
+}
+integrated_brownian_bridge <- function(K) {
+  # Generate a square integrated Brownian bridge
+  results = 1:K*0
+  # result vector
+  for(i in 1:K){
+    results[i] = sum(brownian_bridge()^2)/length(brownian_bridge())
+    # Create independent BB in each run; squared sum over gridpoints
+    # provides a Riemann-approximation of the integral
+  }
+  return(results)
+}
+getPVals <- function(f_t, B = 30, A = c(1:9), K=1000) {
+  covMatrix <- getCovMatrix(f_t, A)
+  eigenVals <- getEigenvalues(covMatrix, B)
+  brwnBridges <- vector('list', length=B)
+  for (i in 1:length(brwnBridges)) {
+    brwnBridges[[i]] <- integrated_brownian_bridge(K)
+  }
+  v_ell <- rep(0, K)
+  i <- 1
+  for (e in eigenVals) {
+    brwnBridges[[i]] <- e * brwnBridges[[i]]
+    i <- i+1
+  }
+  for (i in 1:K) {
+    s <- 0
+    for (j in 1:B) {
+      s <- s + brwnBridges[[j]][i]
+    }
+    v_ell[i] <- s
+  }
+  v_ell <- sort(v_ell, decreasing = F)
+  
+  CUSUM <- cusum(A, f_t)
+  
+  pval <- 1 - which.min(abs(CUSUM[1] - v_ell))/K
+  
+  return(pval)
+}
+
+
+# Get data
+setwd(dirname(getActiveDocumentContext()$path))
+load("9ETFs.RData")
+sectors <- c('xlb' = 'materials', 'xle' = 'energy', 'xlf' = 'financials',
+             'xli' = 'industrials', 'xlk' = 'technology', 'xlp' = 'consumer staples',
+             'xlu' = 'utilities', 'xlv' = 'health care', 'xly' = 'consumer discretionary')
+sector.df.list <- getSectorDfList(logret = F)
+rm(dj, sp, xlb, xlb.r, xle, xle.r, xlf, xlf.r, xli, xli.r, xlk, xlk.r, xlp, xlp.r, xlu, xlu.r, xlv, xlv.r, xly, xly.r)
+```
+
+## January 2008
+
+In January, home sales fell to the lowest level in 10 years after the housing boom in 2006. On January 22, the FOMC lowered the fed funds rate to 3.5%, and again to 3% a week later. 
+
+```{r}
+## Detect changes January 2008
+startDate <- as.Date("2008-01-01")
+endDate <- as.Date("2008-01-30")
+f_t <- concatVectors(startDate, endDate, sector.df.list)
+
+# calculate p-value for each individual sector
+pval_individual <- c(xlb=getPVals(f_t, A=1), xle=getPVals(f_t, A=2), xlf=getPVals(f_t, A=3),
+                     xli=getPVals(f_t, A=4), xlk=getPVals(f_t, A=5), xlp=getPVals(f_t, A=6),
+                     xlu=getPVals(f_t, A=7), xlv=getPVals(f_t, A=8), xly=getPVals(f_t, A=9))
+
+# identification procedure
+A <- c()
+```
+
