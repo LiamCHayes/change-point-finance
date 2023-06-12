@@ -25,6 +25,16 @@ getDateRange <- function(numDays, sector.df.list) {
   endDate <- startDate + numDays
   return(c(startDate, endDate))
 }
+getTradingDays <- function(sector.dfs, startDate, endDate) {
+  sector.df.timeFrame <- 
+    lapply(sector.dfs, function(x) {
+      filter(x, Date > as.Date(startDate, "%m/%d/%Y"),
+             Date < as.Date(endDate, "%m/%d/%Y")
+      )
+    })
+  tradingDays <- unique(sector.df.timeFrame[[1]]$Date)
+  return(tradingDays)
+}
 getReturns <- function(df, logRet=F) {
   # compute returns and add to dataframe
   returns <- rep(0, dim(df)[1])
@@ -218,11 +228,52 @@ endDate <- as.Date("2008-01-30")
 f_t <- concatVectors(startDate, endDate, sector.df.list)
 
 # calculate p-value for each individual sector
-pval_individual <- c(xlb=getPVals(f_t, A=1), xle=getPVals(f_t, A=2), xlf=getPVals(f_t, A=3),
-                     xli=getPVals(f_t, A=4), xlk=getPVals(f_t, A=5), xlp=getPVals(f_t, A=6),
-                     xlu=getPVals(f_t, A=7), xlv=getPVals(f_t, A=8), xly=getPVals(f_t, A=9))
+pval_individual <- c(xlb=getPVals(f_t, A=1), xle=getPVals(f_t, A=2),
+                     xlf=getPVals(f_t, A=3), xli=getPVals(f_t, A=4),
+                     xlk=getPVals(f_t, A=5), xlp=getPVals(f_t, A=6),
+                     xlu=getPVals(f_t, A=7), xlv=getPVals(f_t, A=8),
+                     xly=getPVals(f_t, A=9))
+pval_individual <- sort(pval_individual)
+newIndexes <- c(which(names(sectors)==names(pval_individual)[1]),
+       which(names(sectors)==names(pval_individual)[2]),
+       which(names(sectors)==names(pval_individual)[3]),
+       which(names(sectors)==names(pval_individual)[4]),
+       which(names(sectors)==names(pval_individual)[5]),
+       which(names(sectors)==names(pval_individual)[6]),
+       which(names(sectors)==names(pval_individual)[7]),
+       which(names(sectors)==names(pval_individual)[8]),
+       which(names(sectors)==names(pval_individual)[9]))
 
 # identification procedure
-A <- c()
+sectorsWithChange <- c()
+currentSectorHasChange <- T
+i <- 1
+while (currentSectorHasChange) {
+  if (getPVals(f_t, A=newIndexes[i:9]) <= 0.05) {
+    sectorsWithChange <- c(sectorsWithChange, newIndexes[i])
+  } else currentSectorHasChange <- F
+  i <- i + 1
+}
 ```
+
+The sectors that showed a change in distribution in January are `r sectors[sectorsWithChange]`.
+
+```{r}
+## Find estimated time of change
+tradingDays <- getTradingDays(sector.df.list, startDate, endDate)
+
+timesOfChanges <- rep(0, 9)
+for (s in sectorsWithChange) {
+  t_s_options <- rep(0, length(f_t))
+  for (t in 1:length(f_t)) {
+    t_s_options[t] <- sum((PS(t, s, f_t)[[s]] - (t/length(f_t)) * PS(length(f_t), s, f_t)[[s]])**2)
+  }
+  timesOfChanges[s] <- tradingDays[which.max(t_s_options)]
+}
+
+timesOfChanges[timesOfChanges==0] <- NA
+class(timesOfChanges) <- "Date"
+```
+
+
 
